@@ -4,12 +4,9 @@ This code is for the paper _Revisiting Demonstration Selection Strategies in In-
 ## Installation
 Note: OpenICL requires Python 3.8+
 
-
 **Installation for local development:**
 ```
-git clone https://github.com/Romainpkq/revisit_demon_selection_in_ICL.git
-
-cd revisit_demon_selection_in_ICL
+cd reason-icl
 pip install -e .
 ```
 
@@ -19,7 +16,5 @@ Following example shows you how to perform ICL on sentiment classification datas
 # predict
 accelerate launch --multi_gpu --num_processes {cuda_num} exp/run.py
 
-# calculate the accuracy
-python prediction.py
 ```
 # reason-icl
