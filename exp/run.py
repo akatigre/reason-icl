@@ -61,8 +61,8 @@ if __name__ == '__main__':
                 output_json_filepath = f'results/{task_name}_{model_path.split("/")[-1]}_{retrieve_model_name.split("/")[-1]}_{icl_shot:02d}shot'
                 os.makedirs(output_json_filepath, exist_ok=True)
                 dataset = load_dataset(data_map[task_name]["data_path"], data_map[task_name]["subset_name"])
-                data = DatasetReader(data, input_columns=data_map[task_name]["input_columns"], output_column=data_map[task_name]["output_column"], ds_size=10)
-
+                data = DatasetReader(dataset, input_columns=data_map[task_name]["input_columns"], output_column=data_map[task_name]["output_column"], ds_size=10)
+                breakpoint()
                 topk_retriever = TopkRetriever(data, ice_num=icl_shot, sentence_transformers_model_name=retrieve_model_name, tokenizer_name=retrieve_model_name, 
                                                batch_size=1, index_split=data_map[task_name]["train_split"], test_split=data_map[task_name]["test_split"], accelerator=accelerator)
                 # cone_retriever = ConERetriever(data, ice_num=icl_shot, candidate_num=30, sentence_transformers_model_name=retrieve_model_name, tokenizer_name=retrieve_model_name, model_tokenizer_name=model_path, ce_model_name=model_path, ice_template=data_map[task_name]["template"], select_time=candidate_num, seed=seed, batch_size=batch_size, test_split='test', accelerator=accelerator)
@@ -72,4 +72,3 @@ if __name__ == '__main__':
                 topk_predictions = [processing_answer(pred.split('\n\n')[0]) for pred in topk_predictions]
                 score = AccEvaluator().score(predictions=topk_predictions, references=data.references)
                 print(score)
-
