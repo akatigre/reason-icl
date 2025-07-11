@@ -200,7 +200,7 @@ class DatasetReader:
         return self.dataset[idx]
 
     def __repr__(self):
-        return f"DatasetReader({{\n    dataset: {self.dataset},\n    input_columns: {self.input_columns},\n    output_columns: {self.output_column}\n}})"
+        return f"DatasetReader({{\n    dataset: {self.dataset},\n    input_columns: {self.input_columns},\n    output_column: {self.output_column}\n}})"
 
 
 def load_partial_dataset(dataset: Dataset, size: Optional[Union[int, float]] = None) -> Dataset:
