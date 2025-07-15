@@ -11,7 +11,6 @@ This project implements an in-context learning (ICL) experiment with four differ
 ## Installation
 Python 3.9, transformers > 4.49.0, install uv beforehand
 
-
 **Installation for local development:**
 ```
 cd reason-icl
@@ -26,15 +25,4 @@ numpy should be 1.x.x, transformers>4.53 to support qwen3
 ```python
 # predict
 accelerate launch --multi_gpu --num_processes GPU_NUM exp/run.py
-```
-
-```
-.
-├── model_latent_rationale.py  # Contains VAE model and embedding extraction functions
-├── icl_experiment.py          # Main implementation of ICL experiment
-├── run_icl_experiment.sh      # Shell script to run the experiment
-├── visualize_results.py       # Script to analyze and visualize results
-├── checkpoints/               # Directory containing VAE checkpoints
-├── logs/                      # Output logs and predictions
-└── results/                   # Results and visualizations
 ```

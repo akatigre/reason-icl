@@ -168,6 +168,7 @@ class BaseInferencer:
 
 class GenInferencerOutputHandler:
     origin_prompt_dict = {}
+    origin_answer_dict = {}
     output_dict = {}
     prediction_dict = {}
     results_dict = {}
@@ -179,6 +180,7 @@ class GenInferencerOutputHandler:
         self.num = num
         self.accelerator = accelerator
         self.origin_prompt_dict = {}
+        self.origin_answer_dict = {}
         self.output_dict = {}
         self.prediction_dict = {}
         self.results_dict = {}
@@ -187,6 +189,7 @@ class GenInferencerOutputHandler:
         self.results_dict = {
             str(idx): {
                 'origin_prompt': self.origin_prompt_dict[str(idx)],
+                'origin_answer': self.origin_answer_dict[str(idx)],
                 'output': self.output_dict[str(idx)],
                 'prediction': self.prediction_dict[str(idx)]
             } for idx in self.origin_prompt_dict.keys()
@@ -212,11 +215,17 @@ class GenInferencerOutputHandler:
                     json_file.close()
             self.results_dict = dict(sorted(self.results_dict.items(), key=lambda x: int(x[0])))
 
-    def save_orgin_prompts(self, origin_prompts: List[str]):
+    def save_origin_prompts(self, origin_prompts: List[str]):
         for idx, origin_prompt in enumerate(origin_prompts):
             if self.accelerator is not None:
                 idx = idx * self.accelerator.num_processes + self.accelerator.process_index
             self.origin_prompt_dict[str(idx)] = origin_prompt
+    
+    def save_origin_answers(self, origin_answers: List[str]):
+        for idx, origin_answer in enumerate(origin_answers):
+            if self.accelerator is not None:
+                idx = idx * self.accelerator.num_processes + self.accelerator.process_index
+            self.origin_answer_dict[str(idx)] = origin_answer
 
     def save_prediction_and_output(self, prediction, output, idx):
         if self.accelerator is not None:

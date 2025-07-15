@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 class GenInferencer(BaseInferencer):
     """Generation In-context Learning Inferencer Class
         In-context Learning Inferencer for Directly Generation.
-        
+
     Attributes:
         model (:obj:`AutoModelForCausalLM`, optional): Local PLM (loaded from Hugging Face), which can be initialized by name or a config class. 
         tokenizer (:obj:`AutoTokenizer` or :obj:`GPT2Tokenizer`, optional): Tokenizer for :obj:`model`.
@@ -70,24 +70,30 @@ class GenInferencer(BaseInferencer):
 
         # 2. Get results of retrieval process
         ice_idx_list = retriever.retrieve()
-        
-        # 3. Generate prompts for testing input 
+
+        # 3. Generate prompts for testing input
         prompt_list = get_generation_prompt_list_from_retriever_indices(ice_idx_list, retriever, self.tokenizer,
                                                                         self.gen_field_replace_token,
                                                                         max_model_token_num=self.max_model_token_num,
                                                                         ice_template=ice_template,
                                                                         prompt_template=prompt_template)
-        output_handler.save_orgin_prompts(prompt_list)
-
+        
+        if prompt_list[0].endswith('<|im_end|>\n'):
+            prompt_list = [prompt_list[i][:-len("<|im_end|>\n")] for i in range(len(prompt_list))]
+        answer_list = [retriever.test_ds[i]['answer'] for i in range(len(retriever.test_ds))]
+        output_handler.save_origin_prompts(prompt_list)
+        output_handler.save_origin_answers(answer_list)
+        retriever.model.to('cpu')
         # 4. Wrap prompts with Dataloader
         dataloader = get_dataloader(prompt_list, self.batch_size)
 
-        # 5. Inference for prompts in each batch 
+        # 5. Inference for prompts in each batch
         logger.info("Starting inference process...")
         for entry in tqdm(dataloader, disable=not self.is_main_process):
             # 5-1. Inference with local model
             if not self.call_api:
                 with torch.no_grad():
+                    
                     tokenized_data = self.tokenizer.batch_encode_plus(entry, padding=True, return_tensors='pt').to(
                         self.device)
                     prompt_len = int(tokenized_data.attention_mask.shape[1])
@@ -111,22 +117,28 @@ class GenInferencer(BaseInferencer):
                                                       pad_token_id=self.tokenizer.pad_token_id,
                                                       **self.generation_kwargs)
                     outputs = outputs.tolist()
-                    complete_output = self.tokenizer.batch_decode(outputs[:], skip_special_tokens=True)
+                    complete_output = self.tokenizer.batch_decode(
+                        outputs[:], skip_special_tokens=True)
                     generated = self.tokenizer.batch_decode([output[prompt_len:] for output in outputs],
                                                             skip_special_tokens=True)
             # 5-2. Inference with remote API
             else:
-                complete_output, generated = api_get_tokens(self.api_name, entry)
+                complete_output, generated = api_get_tokens(
+                    self.api_name, entry)
 
             # 5-3. Save current output
             for prediction, output in zip(generated, complete_output):
-                output_handler.save_prediction_and_output(prediction, output, index)
+                output_handler.save_prediction_and_output(
+                    prediction, output, index)
                 index = index + 1
 
-        # 6. Output 
-        output_handler.subprocess_write_to_json(output_json_filepath, output_json_filename)
+        # 6. Output
+        output_handler.subprocess_write_to_json(
+            output_json_filepath, output_json_filename)
         if self.accelerator is not None:
             self.accelerator.wait_for_everyone()
-        output_handler.merge_to_main_process(output_json_filepath, output_json_filename)
-        output_handler.write_to_json(output_json_filepath, output_json_filename)
+        output_handler.merge_to_main_process(
+            output_json_filepath, output_json_filename)
+        output_handler.write_to_json(
+            output_json_filepath, output_json_filename)
         return [sample['prediction'] for sample in output_handler.results_dict.values()]
