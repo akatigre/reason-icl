@@ -94,16 +94,18 @@ class GenInferencer(BaseInferencer):
             # 5-1. Inference with local model
             if not self.call_api:
                 with torch.no_grad():
-                    if len(entry) > 1:
-                        text, image_paths, video_paths = entry
-                        image_inputs = [Image.open(image_path) for image_path in image_paths]
-                        video_inputs = None
-                    else:
-                        text = entry
-                        image_inputs = None
-                        video_inputs = None
-
-                    inputs = self.tokenizer(text=[text], images=image_inputs, videos=video_inputs, return_tensors="pt").to(self.device)
+                    # if len(entry) > 1:
+                    #     text, image_paths, video_paths = entry
+                    #     image_inputs = [Image.open(image_path) for image_path in image_paths]
+                    #     video_inputs = None
+                    # else:
+                    #     text = entry
+                    #     image_inputs = None
+                    #     video_inputs = None
+                    text = entry
+                    image_inputs = None
+                    video_inputs = None
+                    inputs = self.tokenizer(text=text, padding=True, return_tensors="pt").to(self.device) # images=image_inputs, videos=video_inputs, 
                     prompt_len = int(inputs.attention_mask.shape[1])
 
                     if 't5' in self.model_name:
