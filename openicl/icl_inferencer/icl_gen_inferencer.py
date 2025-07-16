@@ -80,6 +80,7 @@ class GenInferencer(BaseInferencer):
         
         if prompt_list[0].endswith('<|im_end|>\n'):
             prompt_list = [prompt_list[i][:-len("<|im_end|>\n")] for i in range(len(prompt_list))]
+            
         answer_list = [retriever.test_ds[i]['answer'] for i in range(len(retriever.test_ds))]
         output_handler.save_origin_prompts(prompt_list)
         output_handler.save_origin_answers(answer_list)
@@ -93,34 +94,45 @@ class GenInferencer(BaseInferencer):
             # 5-1. Inference with local model
             if not self.call_api:
                 with torch.no_grad():
-                    
-                    tokenized_data = self.tokenizer.batch_encode_plus(entry, padding=True, return_tensors='pt').to(
-                        self.device)
-                    prompt_len = int(tokenized_data.attention_mask.shape[1])
+                    if len(entry) > 1:
+                        text, image_paths, video_paths = entry
+                        image_inputs = [Image.open(image_path) for image_path in image_paths]
+                        video_inputs = None
+                    else:
+                        text = entry
+                        image_inputs = None
+                        video_inputs = None
+
+                    inputs = self.tokenizer(text=[text], images=image_inputs, videos=video_inputs, return_tensors="pt").to(self.device)
+                    prompt_len = int(inputs.attention_mask.shape[1])
+
                     if 't5' in self.model_name:
                         prompt_len = 0
+
                     if force_words is not None:
-                        force_words_ids = [
-                            self.tokenizer(force_words).input_ids,
-                        ]
-                        outputs = self.model.generate(input_ids=tokenized_data.input_ids,
-                                                      force_words_ids=force_words_ids,
-                                                      num_beams=10,
-                                                      attention_mask=tokenized_data.attention_mask,
-                                                      eos_token_id=self.tokenizer.eos_token_id,
-                                                      pad_token_id=self.tokenizer.pad_token_id,
-                                                      **self.generation_kwargs)
+                        force_words_ids = [self.tokenizer(force_words).input_ids,]
+                        outputs = self.model.generate(
+                            **inputs,
+                            force_words_ids=force_words_ids,
+                            num_beams=10,
+                            #   input_ids=tokenized_data.input_ids,
+                            #   attention_mask=tokenized_data.attention_mask,
+                            eos_token_id=self.tokenizer.eos_token_id,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            **self.generation_kwargs
+                            )
                     else:
-                        outputs = self.model.generate(input_ids=tokenized_data.input_ids,
-                                                      attention_mask=tokenized_data.attention_mask,
-                                                      eos_token_id=self.tokenizer.eos_token_id,
-                                                      pad_token_id=self.tokenizer.pad_token_id,
-                                                      **self.generation_kwargs)
+                        outputs = self.model.generate(
+                            **inputs,
+                            #   input_ids=tokenized_data.input_ids,
+                            #   attention_mask=tokenized_data.attention_mask,
+                            eos_token_id=self.tokenizer.eos_token_id,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            **self.generation_kwargs
+                            )
                     outputs = outputs.tolist()
-                    complete_output = self.tokenizer.batch_decode(
-                        outputs[:], skip_special_tokens=True)
-                    generated = self.tokenizer.batch_decode([output[prompt_len:] for output in outputs],
-                                                            skip_special_tokens=True)
+                    complete_output = self.tokenizer.batch_decode(outputs[:], skip_special_tokens=True)
+                    generated = self.tokenizer.batch_decode([output[prompt_len:] for output in outputs], skip_special_tokens=True)
             # 5-2. Inference with remote API
             else:
                 complete_output, generated = api_get_tokens(

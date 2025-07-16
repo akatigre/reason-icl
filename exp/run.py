@@ -1,5 +1,7 @@
 import re
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import argparse
 from accelerate import Accelerator
@@ -7,10 +9,11 @@ from openicl import PromptTemplate
 from openicl import DatasetReader
 from openicl import RandomRetriever, BM25Retriever, ConERetriever, TopkRetriever, PPLInferencer, AccEvaluator, GenInferencer
 from datasets import load_dataset
+from pathlib import Path
+
 from utils.math_utils import grade_answer_sympy
 from utils.parse_utils import extract_last_boxed_text
 from data_template import DATA_MAP, IN_CONTEXT_EXAMPLE_TOKEN
-from pathlib import Path
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -37,10 +40,12 @@ if __name__ == '__main__':
                 dataset = load_dataset(config["data_path"], config["subset_name"])
                 dataset[config["train_split"]] = dataset[config["train_split"]].map(config["data_processor"])
                 dataset[config["test_split"]] = dataset[config["test_split"]].map(config["data_processor"])
-                data = DatasetReader(dataset, input_columns=config["input_columns"], output_column=config["output_column"], ds_size=30)
+                data = DatasetReader(dataset, input_columns=config["input_columns"], output_column=config["output_column"], ds_size=None)
 
-                topk_retriever = TopkRetriever(data, ice_num=args.icl_shot, sentence_transformers_model_name=args.retrieve_model_path, tokenizer_name=args.retrieve_model_path,
-                                               batch_size=1, index_split=config["train_split"], test_split=config["test_split"], accelerator=accelerator)
+                topk_retriever = TopkRetriever(
+                    data, ice_num=args.icl_shot, sentence_transformers_model_name=args.retrieve_model_path, tokenizer_name=args.retrieve_model_path,
+                    batch_size=1, index_split=config["train_split"], test_split=config["test_split"], accelerator=accelerator
+                    )
 
                 # cone_retriever = ConERetriever(data, ice_num=icl_shot, candidate_num=30, sentence_transformers_model_name=retrieve_model_name, tokenizer_name=retrieve_model_name, model_tokenizer_name=model_path, ce_model_name=model_path, ice_template=config["template"], select_time=candidate_num, seed=seed, batch_size=batch_size, test_split='test', accelerator=accelerator)
                 inferencer = GenInferencer(
@@ -54,15 +59,15 @@ if __name__ == '__main__':
 
                 topk_predictions = inferencer.inference(topk_retriever, ice_template=config["template"], output_json_filename=f'topk_seed_{seed}')
                 
-                with open(Path(output_json_filepath) / f'topk_seed_{seed}.json', 'r') as f:
+                with open( Path(output_json_filepath) / f'topk_seed_{seed}.json', 'r') as f:
                     topk_predictions = json.load(f)
                     
                 for k, pred in topk_predictions.items():
-                    pred["parsed_prediction"] = extract_last_boxed_text(pred['prediction'])
+                    pred["parsed_prediction"] = extract_last_boxed_text(pred['prediction']) # args.retrieve_model_path
                     
                 list_of_tuples = [
                     grade_answer_sympy(pred['parsed_prediction'], pred['origin_answer']) for pred in topk_predictions.values()
-                    ]
+                ]
                 
                 tf = [t[0] for t in list_of_tuples]
                 acc = sum(tf) / len(tf)

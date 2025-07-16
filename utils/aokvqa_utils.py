@@ -38,7 +38,6 @@ def load_aokvqa_sample(data, split):
     else:
         correct_choice_idx = data['correct_choice_idx']
         correct_choice = data['choices'][ correct_choice_idx ]
-        # rationales = data['rationales']
         meta_data = {
             # "rationales": rationales,
             "answer": correct_choice
@@ -55,8 +54,6 @@ def load_aokvqa_sample(data, split):
         }
     ]
     return content, meta_data
-
-
 
 def _eval_acc(preds):
     acc = []
