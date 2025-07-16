@@ -36,12 +36,12 @@ if __name__ == '__main__':
             for task_name in task_names:
                 config = DATA_MAP[task_name]
                 output_json_filepath = f'results/{task_name}_{model_path.split("/")[-1]}_{args.retrieve_model_path.split("/")[-1]}_{args.icl_shot:02d}shot'
+                
                 os.makedirs(output_json_filepath, exist_ok=True)
                 dataset = load_dataset(config["data_path"], config["subset_name"])
                 dataset[config["train_split"]] = dataset[config["train_split"]].map(config["data_processor"])
                 dataset[config["test_split"]] = dataset[config["test_split"]].map(config["data_processor"])
-                data = DatasetReader(dataset, input_columns=config["input_columns"], output_column=config["output_column"], ds_size=None)
-
+                data = DatasetReader(dataset, input_columns=config["input_columns"], output_column=config["output_column"], ds_size=10)
                 topk_retriever = TopkRetriever(
                     data, ice_num=args.icl_shot, sentence_transformers_model_name=args.retrieve_model_path, tokenizer_name=args.retrieve_model_path,
                     batch_size=1, index_split=config["train_split"], test_split=config["test_split"], accelerator=accelerator
@@ -58,17 +58,4 @@ if __name__ == '__main__':
                     )
 
                 topk_predictions = inferencer.inference(topk_retriever, ice_template=config["template"], output_json_filename=f'topk_seed_{seed}')
-                
-                with open( Path(output_json_filepath) / f'topk_seed_{seed}.json', 'r') as f:
-                    topk_predictions = json.load(f)
-                    
-                for k, pred in topk_predictions.items():
-                    pred["parsed_prediction"] = extract_last_boxed_text(pred['prediction']) # args.retrieve_model_path
-                    
-                list_of_tuples = [
-                    grade_answer_sympy(pred['parsed_prediction'], pred['origin_answer']) for pred in topk_predictions.values()
-                ]
-                
-                tf = [t[0] for t in list_of_tuples]
-                acc = sum(tf) / len(tf)
-                print(f"Task: {task_name}, Seed: {seed}, Acc: {acc}")
+                print(output_json_filepath)
