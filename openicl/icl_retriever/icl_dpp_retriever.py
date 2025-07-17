@@ -50,13 +50,13 @@ class DPPRetriever(TopkRetriever):
                  test_split: Optional[str] = 'test',
                  tokenizer_name: Optional[str] = 'gpt2-xl',
                  batch_size: Optional[int] = 1,
-                 accelerator: Optional[Accelerator] = None,
+                 num_gpus: Optional[int] = 4,
                  seed: Optional[int] = 1,
                  scale_factor: Optional[float] = 0.1
                  ) -> None:
         super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token,
                          sentence_transformers_model_name, ice_num, index_split, test_split, tokenizer_name, batch_size,
-                         accelerator)
+                         num_gpus)
         self.candidate_num = candidate_num
         self.seed = seed
         self.scale_factor = scale_factor

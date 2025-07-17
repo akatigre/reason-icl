@@ -3,8 +3,6 @@
 from datasets import Dataset, DatasetDict
 from typing import List, Union, Optional, Tuple, Dict
 from openicl import DatasetReader, PromptTemplate
-from openicl.utils.check_type import _check_str
-from accelerate import Accelerator
 
 
 class BaseRetriever:
@@ -21,7 +19,6 @@ class BaseRetriever:
         test_split (:obj:`str`, optional): A string for the generation dataset name. The test dataset is used to generate prompts for each data. Defaults to ``test``.
         index_ds (:obj:`Dataset`): The index dataset. Used to select data for in-context examples.
         test_ds (:obj:`Dataset`): The test dataset. Used to generate prompts for each data.
-        accelerator (:obj:`Accelerator`, optional): An instance of the :obj:`Accelerator` class, used for multiprocessing.
     """
     index_ds = None
     test_ds = None
@@ -34,7 +31,6 @@ class BaseRetriever:
                  ice_num: Optional[int] = 1,
                  index_split: Optional[str] = 'train',
                  test_split: Optional[str] = 'test',
-                 accelerator: Optional[Accelerator] = None
                  ) -> None:
         self.dataset_reader = DatasetReader._check_dataset_reader(dataset_reader)
         self.ice_separator = ice_separator
@@ -43,26 +39,15 @@ class BaseRetriever:
         self.ice_num = ice_num
         self.index_split = index_split
         self.test_split = test_split
-        self.accelerator = accelerator
-        self.is_main_process = True if self.accelerator is None or self.accelerator.is_main_process else False
+        
         if isinstance(self.dataset_reader.dataset, Dataset):
             self.index_ds = self.dataset_reader.dataset
             self.test_ds = self.dataset_reader.dataset
-            if self.accelerator is not None:
-                self.test_ds = self.test_ds.shard(
-                    num_shards=self.accelerator.num_processes,
-                    index=self.accelerator.process_index
-                )
+            
         else:
             self.index_ds = self.dataset_reader.dataset[self.index_split]
             self.test_ds = self.dataset_reader.dataset[self.test_split]
-
-            if self.accelerator is not None:
-                self.test_ds = self.test_ds.shard(
-                    num_shards=self.accelerator.num_processes,
-                    index=self.accelerator.process_index
-                )
-
+            
     def retrieve(self) -> List[List]:
         """
             Retrieve for each data in generation_ds.

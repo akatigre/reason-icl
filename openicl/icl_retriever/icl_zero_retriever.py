@@ -29,9 +29,8 @@ class ZeroRetriever(BaseRetriever):
                  prompt_eos_token: Optional[str] = '',
                  index_split: Optional[str] = 'train',
                  test_split: Optional[str] = 'test',
-                 accelerator: Optional[Accelerator] = None
                  ) -> None:
-        super().__init__(dataset_reader, '', ice_eos_token, prompt_eos_token, 0, index_split, test_split, accelerator)
+        super().__init__(dataset_reader, '', ice_eos_token, prompt_eos_token, 0, index_split, test_split)
 
     def retrieve(self) -> List[List]:
         rtr_idx_list = [[] for _ in range(len(self.test_ds))]

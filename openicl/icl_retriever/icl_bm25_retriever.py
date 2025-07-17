@@ -44,10 +44,8 @@ class BM25Retriever(BaseRetriever):
                  ice_num: Optional[int] = 1,
                  index_split: Optional[str] = 'train',
                  test_split: Optional[str] = 'test',
-                 accelerator: Optional[Accelerator] = None
                  ) -> None:
-        super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token, ice_num, index_split,
-                         test_split, accelerator)
+        super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token, ice_num, index_split, test_split)
         self.index_corpus = [word_tokenize(data) for data in
                              self.dataset_reader.generate_input_field_corpus(self.index_ds)]
         self.bm25 = BM25Okapi(self.index_corpus)

@@ -38,10 +38,10 @@ class RandomRetriever(BaseRetriever):
                  index_split: Optional[str] = 'train',
                  test_split: Optional[str] = 'test',
                  seed: Optional[int] = 43,
-                 accelerator: Optional[Accelerator] = None
+                 num_gpus: Optional[int] = 4
                  ) -> None:
         super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token, ice_num, index_split,
-                         test_split, accelerator)
+                         test_split, num_gpus)
         self.seed = seed
 
     def retrieve(self):

@@ -54,7 +54,7 @@ class MDLRetriever(TopkRetriever):
                  ce_model_name: Optional[str] = 'gpt2-xl',
                  batch_size: Optional[int] = 1,
                  select_time: Optional[int] = 5,
-                 accelerator: Optional[Accelerator] = None,
+                 num_gpus: Optional[int] = 4,
                  ice_template: Optional[PromptTemplate] = None,
                  prompt_template: Optional[PromptTemplate] = None,
                  labels: Optional[List] = None,
@@ -62,7 +62,7 @@ class MDLRetriever(TopkRetriever):
                  ) -> None:
         super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token,
                          sentence_transformers_model_name, ice_num, index_split, test_split, tokenizer_name, batch_size,
-                         accelerator)
+                         num_gpus)
         self.ce_model_name = ce_model_name
         self.candidate_num = candidate_num
         self.select_time = select_time

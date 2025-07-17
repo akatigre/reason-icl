@@ -46,11 +46,11 @@ class VotekRetriever(TopkRetriever):
                  tokenizer_name: Optional[str] = 'gpt2-xl',
                  batch_size: Optional[int] = 1,
                  votek_k: Optional[int] = 3,
-                 accelerator: Optional[Accelerator] = None,
+                 num_gpus: Optional[int] = 4,
                  ) -> None:
         super().__init__(dataset_reader, ice_separator, ice_eos_token, prompt_eos_token,
                          sentence_transformers_model_name, ice_num, index_split, test_split, tokenizer_name, batch_size,
-                         accelerator)
+                         num_gpus)
         self.votek_k = votek_k
 
     def votek_select(self, embeddings=None, select_num=None, k=None, overlap_threshold=None, vote_file=None):

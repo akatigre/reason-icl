@@ -5,33 +5,9 @@ from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Array2D
 from sentence_transformers import SentenceTransformer
 
-def save_into_jsonl(data_path_json):
-    with open(data_path_json, "r") as f:
-        data = json.load(f)
-        
-    lines = []
-    for key, line in data.items():
-        if "cot_with_tag_variants" in line:
-            lines.append({
-                "id": key,
-                "cot_wo_tag": " ".join(line["cot_wo_tag"]),
-                "cot_with_tag": " ".join(line["cot_with_tag"]),
-                "question": line["query"],
-                "answer": line["choices"][line["correct_choice_idx"]],
-                "cot_with_tag_correct": line["cot_with_tag_correct"],
-                "cot_wo_tag_correct": line["cot_wo_tag_correct"],
-                "cot_with_tag_negatives": line["cot_with_tag_variants"]["EntitySwap"] + line["cot_with_tag_variants"]["Paraphrasing"],
-                "cot_wo_tag_negatives": line["cot_wo_tag_variants"]["EntitySwap"] + line["cot_wo_tag_variants"]["Paraphrasing"]
-            })
-    
-    with open(data_path_json.replace(".json", ".jsonl"), "w") as f:
-        for line in lines:
-            f.write(json.dumps(line) + "\n")
 
 def embed_and_save_faiss(ds, save_to_path, emb_model, gen_model):
     model = SentenceTransformer(emb_model, model_kwargs={"torch_dtype": "bfloat16"})
-
-    # keys_to_embed = ["solution", ""]
     pool = model.start_multi_process_pool(target_devices=["cuda:0", "cuda:1"])
     # Encode with multiple GPUs
     keys_to_embed = ["cot_wo_tag", "question"]
@@ -43,7 +19,7 @@ def embed_and_save_faiss(ds, save_to_path, emb_model, gen_model):
         embeddings = model.encode(inputs_list, pool=pool)
         ds = ds.add_column(key_to_save, embeddings.tolist())
         ds.add_faiss_index(column=key_to_save)
-        ds.save_faiss_index(key_to_save, os.path.join(save_to_path, key + ".faiss"))
+        ds.save_faiss_index(key_to_save, os.path.join(save_to_path, emb_model.split("/")[-1], key + ".faiss"))
     
     inputs_nested_list = [line["cot_wo_tag_negatives"] for line in ds]
     embedding_list = []
@@ -59,7 +35,6 @@ def embed_and_save_faiss(ds, save_to_path, emb_model, gen_model):
     ds = ds.cast_column(key_to_save, Array2D(shape=(M, D), dtype="float32"))
     ds.save_to_disk(os.path.join(save_to_path, gen_model.split("/")[-1]))
 
-    
 def load_data_and_embeddings(save_to_path, gen_model, emb_model):
     path_to_dataset = os.path.join(save_to_path, gen_model.split("/")[-1])
     ds = load_from_disk(path_to_dataset)
