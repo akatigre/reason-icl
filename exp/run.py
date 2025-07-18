@@ -8,7 +8,7 @@ import argparse
 from openicl import DatasetReader
 from openicl import RandomRetriever, BM25Retriever, ConERetriever, TopkRetriever
 from datasets import load_dataset
-from data_template import DATA_MAP
+from data_template import DATA_MAP, IN_CONTEXT_EXAMPLE_TOKEN
 from sentence_transformers import SentenceTransformer
 from utils.parse_utils import extract_last_boxed_text
 from utils.math_utils import grade_answer_sympy
@@ -71,6 +71,7 @@ if __name__ == '__main__':
             prompt = retriever.generate_prompt_for_generate_task(
                 idx, 
                 ice, 
+                gen_field_replace_token=IN_CONTEXT_EXAMPLE_TOKEN,
                 prompt_template=config["template"]
             )
             prompt_list.append(prompt)

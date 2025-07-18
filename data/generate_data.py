@@ -142,8 +142,8 @@ def main(args):
                     "prompt": cot_with_tag_prompt,
                     "multi_modal_data": {"image": image_inputs},
                 }
-                
                 inputs_cot_tag[problem_id] = llm_inputs
+                
             if "cot_wo_tag" not in results[problem_id] or not results[problem_id].get('cot_wo_tag_correct', False):
                 cot_messages = cot.plan_wo_tags(messages[0]["content"], answer=results[problem_id]['answer'])
                 cot_prompt = processor.apply_chat_template(
@@ -159,7 +159,6 @@ def main(args):
                 inputs_cot_wo_tag[problem_id] = llm_inputs
             
             if args.shot_num > 0:
-                # icl_runner
                 pass
             if args.debug and i == 3:
                 break

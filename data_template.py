@@ -1,14 +1,16 @@
 from openicl import PromptTemplate
 
-llm_template = "Question: </Q> \n Please think step by step and output your answer in \\boxed{}. </A> \n"
-vlm_template = "Question: </Q> \n Image: </I> \n Please think step by step and output your answer in \\boxed{}. </A> \n"
+llm_template = "</E> Question: </Q> \n Please think step by step and output your answer in \\boxed{}. </A> \n"
+vlm_template = "</E> Question: </Q> \n Image: </I> \n Please think step by step and output your answer in \\boxed{}. </A> \n"
 in_context_placeholder_token_map = {'question': '</Q>', 'reason_answer': '</A>'}
+IN_CONTEXT_EXAMPLE_TOKEN = "</E>"
 
 DATA_MAP = {
     "gsm8k": {
         "template": PromptTemplate(
-            template=llm_template,
+            template=IN_CONTEXT_EXAMPLE_TOKEN + llm_template,
             column_token_map=in_context_placeholder_token_map,
+            ice_token=IN_CONTEXT_EXAMPLE_TOKEN,
         ),
         "input_columns": ["question"],
         "output_column": "reason_answer",
