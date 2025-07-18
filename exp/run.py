@@ -22,13 +22,13 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--icl_shot", type=int, default=8)
     parser.add_argument("--num_gpus", type=int, default=4)
-    parser.add_argument("--model_path", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", choices=["Qwen/Qwen2.5-1.5B-Instruct", "Qwen/Qwen2.5-3B-Instruct", "Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-14B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "Qwen/Qwen3-1.7B", "Qwen/Qwen3-4B", "Qwen/Qwen3-8B", "Qwen/Qwen3-14B", "Qwen/Qwen3-32B"])
+    parser.add_argument("--model_path", type=str, default="Qwen/Qwen2.5-7B-Instruct", choices=["Qwen/Qwen2.5-1.5B-Instruct", "Qwen/Qwen2.5-3B-Instruct", "Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-14B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "Qwen/Qwen3-1.7B", "Qwen/Qwen3-4B", "Qwen/Qwen3-8B", "Qwen/Qwen3-14B", "Qwen/Qwen3-32B"])
     parser.add_argument("--retrieve_model_path", type=str, default="Qwen/Qwen3-Embedding-4B")
     
     args = parser.parse_args()
     
     task_names = list(DATA_MAP.keys())
-    TEST = True
+    TEST = False
     
     for task_name in task_names:
         logger.info(f"Running {task_name} with retrieve model {args.retrieve_model_path} and inference model {args.model_path}")
@@ -38,7 +38,7 @@ if __name__ == '__main__':
         dataset = load_dataset(config["data_path"], config["subset_name"])
         dataset[config["train_split"]] = dataset[config["train_split"]].map(config["data_processor"])
         dataset[config["test_split"]] = dataset[config["test_split"]].map(config["data_processor"])
-        ds_size = 30 if TEST else None
+        ds_size = 50 if TEST else None
         data = DatasetReader(dataset, input_columns=config["input_columns"], output_column=config["output_column"], ds_size=ds_size)
         logger.info(f"Loading {args.icl_shot} shot TopK retriever")
         model = SentenceTransformer(
@@ -90,18 +90,22 @@ if __name__ == '__main__':
         outputs = llm.generate(prompt_list, sampling_params=sampling_params, use_tqdm=True)
         results = []
         
-        logger.info(f"Processing and saving results to {output_json_filepath}")
-        for i, (question, answer, output) in enumerate(zip(question_list, answer_list, outputs)):
+        logger.info(f"Processing responses")
+        for i, (question, answer, icl_prompt, output) in enumerate(zip(question_list, answer_list, prompt_list, outputs)):
             response = output.outputs[0].text
             ext_answer = extract_last_boxed_text(response)
             results.append({
                 "question": question,
                 "gt_answer": answer,
+                "icl_prompt": icl_prompt,
                 "full_response": response,
                 "extracted_answer": ext_answer,
                 "correct": grade_answer_sympy(ext_answer, answer)[0]
             })
-        output_json_filepath = f'results/{task_name}_{args.model_path.split("/")[-1]}_{args.retrieve_model_path.split("/")[-1]}_{args.icl_shot:02d}shot_seed_{args.seed}.jsonl'
+        
+        output_json_filepath = f'results/{task_name}/{args.model_path.split("/")[-1]}_{args.retrieve_model_path.split("/")[-1]}_TOPK_{args.icl_shot:02d}shot_seed_{args.seed}.jsonl'
+        os.makedirs(os.path.dirname(output_json_filepath), exist_ok=True)
+        logger.info(f"Saving results to {output_json_filepath}")
         with open(output_json_filepath, "w") as f:
             for result in results:
                 f.write(json.dumps(result) + "\n")

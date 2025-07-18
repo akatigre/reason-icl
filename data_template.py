@@ -17,6 +17,7 @@ DATA_MAP = {
         "data_path": "openai/gsm8k",
         "subset_name": "main",
         "data_processor": lambda example: {
+            **example,
             'reason_answer': example['answer'].split("#### ")[0].replace(',', '').strip() + " The answer is \\boxed{" + example['answer'].split("#### ")[1].replace(',', '').strip() + "}",
             'answer': example['answer'].split("#### ")[1].replace(',', '').strip()
         }
