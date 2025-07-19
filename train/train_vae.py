@@ -3,47 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from parser import get_args
-import pickle
-import json
-from collections import defaultdict
-
-class EmbeddingMetaLoader(Dataset):
-    def __init__(self, metadata, tag=True):
-        """
-        Args:
-            embeddings: dict, keys are pid, values are dict of embedding lists (np arrays) for each type
-            metadata: dict, keys are pid, values are dict of meta lists (strings) for each type
-            keys: list of embedding/meta keys to use (default: all standard types)
-        """
-        self.pids = list(embeddings.keys())
-        self.embeddings = embeddings
-        self.metadata = metadata
-        self.keys = ["query", "cot_with_tag", "negatives_with_tag"] if tag else ["query", "cot_wo_tag", "negatives_wo_tag"]
-        
-        ds = load_dataset('crime_and_punish', split='train[:100]')
-        ds_with_embeddings = ds.map(lambda example: {'embeddings': ctx_encoder(**ctx_tokenizer(example["line"], return_tensors="pt"))[0][0].numpy()})
-        
-
-    def __len__(self):
-        return len(self.pids)
-
-    def __getitem__(self, idx):
-        pid = self.pids[idx]
-        emb_dict = self.embeddings[pid]['embeddings']
-        meta_dict = self.metadata[pid]['meta']
-        out_emb = {}
-        out_meta = {}
-        for k in self.keys:
-            # Embeddings: list of np arrays, concatenate along axis 0
-            emb_list = emb_dict.get(k, [])
-            if len(emb_list) > 0:
-                out_emb[k] = np.concatenate(emb_list, axis=0) if isinstance(emb_list[0], np.ndarray) else np.array(emb_list)
-            else:
-                out_emb[k] = np.array([])
-            # Metadata: list of strings
-            out_meta[k] = meta_dict.get(k, [])
-        return out_emb, out_meta
+from data_template import DATA_MAP
+from data_embed import load_data_and_embeddings
+from datasets import load_dataset
+import os
         
         
 class VAEEncoder(nn.Module):
@@ -165,18 +128,22 @@ def vae_logic_loss(
     return total_loss
 
 if __name__ == "__main__":
+    data_type = "gsm8k"
+
+    data_config = DATA_MAP[data_type]
+    dataset = load_dataset(data_config["data_path"], 'main')
+
+    emb_model = "Qwen/Qwen3-Embedding-4B"
+    gen_model = "Qwen/Qwen2.5-7B-Instruct"
+
+    keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
+
+
+    raw_path = f"data/{data_type}/train/train.jsonl"
+    enhanced_path = f"data/{data_type}/train/train_enhanced.jsonl"
+
+    ds_references = load_dataset("json", data_files=enhanced_path)["train"]
+    ds_references = load_data_and_embeddings(ds_references, os.path.dirname(raw_path), emb_model, keys_to_embed)
+
     
-    args = get_args()
-    
-    with open(args.embedding_output_dir, "rb") as f:
-        embeddings = pickle.load(f)
-        
-    with open(args.predictions, "r", encoding="utf-8") as f:
-        preds = json.load(f)
-      
-    query = ""
-    for pid, pred in preds.items():
-        emb = embeddings[pid]['embeddings'] # question, query, cot_with_tag, cot_wo_tag, negatives_with_tag, negatives_wo_tag
-        meta = embeddings[pid]['meta']
-        
-        
+

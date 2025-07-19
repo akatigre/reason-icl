@@ -17,6 +17,8 @@ cd reason-icl
 uv venv --python 3.9
 uv pip install -e .
 uv pip install -U transformers==4.53.1 numpy==1.26.4
+uv pip install vllm
+uv pip install flash-attn --no-build-isolation
 ```
 numpy should be 1.x.x, transformers>4.53 to support qwen3
 
