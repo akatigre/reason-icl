@@ -2,11 +2,11 @@ from typing import List
 
 def generate_negatives_variations(llm, processor, sampling_params, prompt: str, num_variants: int = 30):
     system_message = (
-        "You are a helpful assistant tasked with rewriting a given prompt into multiple variants."
+        "You are a helpful assistant tasked with rewriting a given prompt in a different way."
     )
     entity_swap_prompt = "Replace key entities in the prompt with plausible but different entities.\n"
     paraphrasing_prompt = "Rephrase the sentence while preserving the original meaning.\n"    
-    user_message = f"For each variant, create a variation of the original prompt by METHOD\n Prompt: {prompt}"
+    user_message = f"METHOD \n Given prompt: {prompt}\n Modified prompt:"
     # Apply chat template with thinking enabled
     
     messages = lambda method: [

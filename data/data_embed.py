@@ -55,8 +55,8 @@ def generate_variations(llm, processor, sampling_params, ds, output_path):
             try:
                 negatives = generate_negatives_variations(llm, processor, sampling_params, row["reason_answer"], num_variants=30)
                 random_idxs = random.sample(idxs, 30)
-                ds_random = [ds[i]["question"] for i in random_idxs]
-                positives = generate_positives_variations(llm, processor, sampling_params, row["question"], ds_random)
+                ds_random = [ds[i]["reason_answer"] for i in random_idxs]
+                positives = generate_positives_variations(llm, processor, sampling_params, row["reason_answer"], ds_random)
 
                 row["negatives"] = negatives
                 row["positives"] = positives
