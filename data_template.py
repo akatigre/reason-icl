@@ -16,7 +16,7 @@ DATA_MAP = {
         "output_column": "reason_answer",
         "train_split": "train",
         "test_split": "test",
-        "data_path": "openai/gsm8k",
+        "data_path": "./data/gsm8k",
         "subset_name": "main",
         "data_processor": lambda example: {
             **example,
@@ -38,22 +38,22 @@ DATA_MAP = {
     #     "subset_name": "main",
     #     "data_processor": lambda example: {'reason_answer': example["solution"] + " The answer is \\boxed{" + example["answer"] + "}"},
     # },
-    # "aokvqa": {
-    #     "template": PromptTemplate(
-    #         template=IN_CONTEXT_EXAMPLE_TOKEN + qwenvl_template,
-    #         column_token_map=in_context_placeholder_token_map,
-    #         ice_token=IN_CONTEXT_EXAMPLE_TOKEN,
-    #     ),
-    #     "input_columns": ["question", "image"],
-    #     "output_column": "reason_answer",
-    #     "train_split": "train",
-    #     "test_split": "val",
-    #     "data_path": "openai/gsm8k",
-    #     "data_processor": lambda example, split: {
-    #         "question": f"{example['question']}. Answer from one of the choices {example['choices']}. When the provided information is insufficient, respond with 'Unanswerable'.\nAnswer the question using a single word or phrase.",
-    #         "image": get_coco_path(split, example['image_id'], "./data/coco"), 
-    #         "answer": example['choices'][ example['correct_choice_idx'] ] if split == "train" else example["difficult_direct_answer"]}
-    # }
+    "AOKVQA": {
+        "template": PromptTemplate(
+            template=IN_CONTEXT_EXAMPLE_TOKEN + vlm_template,
+            column_token_map=in_context_placeholder_token_map,
+            ice_token=IN_CONTEXT_EXAMPLE_TOKEN,
+        ),
+        "input_columns": ["question", "image_path"],
+        "output_column": "reason_answer",
+        "train_split": "train",
+        "test_split": "val",
+        "data_path": "./data/AOKVQA",
+        "subset_name": "main",
+        "data_processor": lambda example: {
+            "reason_answer": example["reason"] + " The answer is \\boxed{" + example["answer"] + "}",
+        }
+    }
 }
 
 # from utils.aokvqa_utils import load_aokvqa, get_coco_path

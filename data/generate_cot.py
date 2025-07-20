@@ -2,6 +2,42 @@ from PIL import Image
 from utils.vis_utils import parse_points, parse_bounding_boxes
 from utils.base64_utils import b64encode_image
 
+def plan_wo_tags(question, answer=None, image=None):
+    if answer is None:
+        answer = "YOUR ANSWER"
+    
+    if image is not None:
+        sys_content = [
+                {
+                    "type": "text", 
+                    "text": "Think step by step and provide the final answer in \\boxed{}."
+                },
+            ]
+        user_content = [
+            {
+                "type": "image",
+                "image": image
+            },
+            {
+                "type": "text",
+                "text": question + f" Output the final answer as \\boxed{answer}."
+            }
+        ]
+    else:
+        sys_content = "Think step by step and provide the final answer in \\boxed{}."
+        user_content = question + f" Output the final answer as \\boxed{answer}."
+    messages = [
+        {
+            "role": "system",
+            "content": sys_content
+        },
+        {
+            "role": "user",
+            "content": user_content
+        }
+    ]
+    return messages
+
 class MyCoT():
     def __init__(self, **kwargs):
         self.multi_modal_tags = """
@@ -13,53 +49,38 @@ class MyCoT():
             <spatial> ... </spatial> OR Not Used
             """
             
-    def plan_wo_tags(self, content, answer=None, multi_modal=True, **kwargs):
+    def plan_wo_tags(self, question, answer=None, image=None, **kwargs):
         if answer is None:
-            answer = "ANSWER HERE"
-        elif isinstance(answer, str):
-            answer = f"the answer is " + "\\boxed{" + answer + "}"
-        else:
-            answer = answer[0]
-
-        contents = [
-            {
-                "type": "text", 
-                "text":f"""
-                You are a reasoning assistant. Given a visual or multimodal question, your task is to:
-                
-                Step 1. Generate a step-by-step reasoning plan into a numbered list. Each step should be a single reasoning step.
-                
-                Step 2. Provide the final answer inside \\boxed{{}}. Keep it short and easy to verify, with no explanation or additional text. 
-
-                Question:
-                """
-            }
-        ] + content + [{
-                "type": "text",
-                "text": f"""
-                    [Output Format]:
-                    Overall format:
-                    List of steps: Your Reasoning Steps
-                    """
-                    + 
-                    f"Answer: \\boxed{{{answer}}}"
-            }]
+            answer = "YOUR ANSWER"
         
+        if image is not None:
+            sys_content = [
+                    {
+                        "type": "text", 
+                        "text": "Think step by step and provide the final answer in \\boxed{}."
+                    },
+                ]
+            user_content = [
+                {
+                    "type": "image",
+                    "image": image
+                },
+                {
+                    "type": "text",
+                    "text": question + f" Output the final answer as \\boxed{answer}."
+                }
+            ]
+        else:
+            sys_content = "Think step by step and provide the final answer in \\boxed{}."
+            user_content = question + f" Output the final answer as \\boxed{answer}."
         messages = [
             {
                 "role": "system",
-                "content": [
-                    {
-                        "type": "text", 
-                        "text": """
-                        You are a helpful assistant that generates a reasoning plan to answer a question.
-                        """
-                    },
-                ]
+                "content": sys_content
             },
             {
                 "role": "user",
-                "content": contents
+                "content": user_content
             }
         ]
         return messages

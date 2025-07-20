@@ -8,6 +8,8 @@ from vllm import LLM, SamplingParams
 from datasets import load_dataset, load_from_disk, Array2D
 from data_template import DATA_MAP
 from data.perturb_reasoning import generate_negatives_variations, generate_positives_variations
+from data.generate_cot import plan_wo_tags
+from utils.parse_utils import extract_last_boxed_text
 import gc
 
 
@@ -45,6 +47,38 @@ def prepare_data(dataset, data_config, split, output_path):
         for row in data:
             row = data_config["data_processor"](row)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+def generate_cots(llm, processor, sampling_params, ds, gts):
+    prompts = []
+    for row in tqdm(ds, desc="Generating COTs without answer"):
+        message = plan_wo_tags(llm, processor, sampling_params, row["question"], answer=None, image=None)
+        prompt = processor.apply_chat_template(message, tokenize=False)
+        prompts.append(prompt)
+        
+    outputs = llm.generate(prompts, sampling_params)
+    responses = [output.outputs[0].text.strip() for output in outputs]
+    extracted = [extract_last_boxed_text(response) for response in responses]
+    correct_idxs = [i for i, answer in enumerate(extracted) if answer == gts[i]]
+    ds = ds.add_column("reason", responses)
+    
+    prompts = []
+    for idx, row in tqdm(enumerate(ds), desc="Generating COTs with answer"):
+        if idx in correct_idxs:
+            continue
+        else:
+            message = plan_wo_tags(llm, processor, sampling_params, row["question"], answer=gts[idx], image=None)
+            prompt = processor.apply_chat_template(message, tokenize=False)
+            prompts.append(prompt)
+        
+    outputs = llm.generate(prompts, sampling_params)
+    responses = [output.outputs[0].text.strip() for output in outputs]
+    for idx, (row, response) in enumerate(zip(ds, responses)):
+        if idx in correct_idxs:
+            continue
+        else:
+            row["reason"] = response
+    return ds
+            
 
 
 def generate_variations(llm, processor, sampling_params, ds, output_path):
@@ -126,28 +160,35 @@ def load_data_and_embeddings(ds, save_to_path, emb_model, keys_to_embed):
 
 def main(data_type):
     data_config = DATA_MAP[data_type]
-    dataset = load_dataset(data_config["data_path"], 'main')
+    from pathlib import Path
+    
 
     emb_model = "Qwen/Qwen3-Embedding-4B"
-    gen_model = "Qwen/Qwen2.5-7B-Instruct"
+    gen_model = "Qwen/Qwen2.5-VL-7B-Instruct"
 
     keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
     splits = [data_config["train_split"], data_config["test_split"]]
 
     for split in splits:
         print(f"\n▶ Processing split: {split}")
-        raw_path = f"data/{data_type}/{split}/{split}.jsonl"
+        # raw_path = f"data/{data_type}/{split}/{split}.jsonl"
         enhanced_path = f"data/{data_type}/{split}/{split}_enhanced.jsonl"
-        prepare_data(dataset, data_config, split, raw_path)
+        # prepare_data(dataset, data_config, split, raw_path)
 
-        ds = load_dataset("json", data_files=raw_path)["train"]
+        ds = load_dataset('json', data_files=str(Path(data_config["data_path"]) / split / f"{split}.jsonl"))['train']
         
         # Load vLLM model for generation
         print("🔄 Loading vLLM model for generation...")
         llm, sampling_params, processor = load_model(
-            gen_model, max_model_token_num=2048, tensor_parallel_size=4, multi_modal=False
-        )
-        
+            gen_model, max_model_token_num=3072, tensor_parallel_size=4, multi_modal=False)
+        if "reason" not in ds[0]:
+            ds = ds[:5]
+            gts = [row["answer"] for row in ds]
+            ds = generate_cots(llm, processor, sampling_params, ds, gts)
+        with open(enhanced_path, "w") as f:
+            for row in ds:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        exit()
         generate_variations(llm, processor, sampling_params, ds, enhanced_path)
 
     print("🔄 Shutting down vLLM engine and freeing CUDA memory...")
@@ -186,4 +227,4 @@ if __name__ == "__main__":
     import multiprocessing
     multiprocessing.set_start_method("spawn", force=True)
 
-    main(data_type="gsm8k")
+    main(data_type="AOKVQA")
