@@ -94,7 +94,7 @@ def generate_cots(llm, processor, sampling_params, ds, gts):
         
     
     outputs = llm.generate(prompts, sampling_params)
-    responses = [output.outputs[0].text.strip() for output in outputs]
+    responses = [output.outputs[0].text.strip() + " The answer" for output in outputs]
     extracted = [extract_last_boxed_text(response) for response in responses]
     correct_idxs = [i for i, answer in enumerate(extracted) if answer == gts[i]]
     ds = ds.add_column("reason", responses)
@@ -277,7 +277,7 @@ if __name__ == "__main__":
     
     data_config = DATA_MAP[args.data_type]
     # keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
-    main(args.data_type, args.tensor_parallel_size, multi_modal, emb_model, gen_model)
+    main(args.data_type, tensor_parallel_size=args.tensor_parallel_size, multi_modal=multi_modal, emb_model=emb_model, gen_model=gen_model)
     # raw_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}.jsonl"
     # enhanced_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}_enhanced.jsonl"
     
