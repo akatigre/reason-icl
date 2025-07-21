@@ -4,6 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import torch
 import random
+import argparse
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
 from datasets import load_dataset, load_from_disk, Array2D
@@ -203,7 +204,7 @@ def load_data_and_embeddings(ds, save_to_path, emb_model, keys_to_embed):
     return ds.with_format("numpy")
 
 
-def main(data_type, multi_modal=False):
+def main(data_type, multi_modal=False, tensor_parallel_size=4, emb_model=None, gen_model=None):
     from pathlib import Path
     data_config = DATA_MAP[data_type]
 
@@ -220,8 +221,7 @@ def main(data_type, multi_modal=False):
         
         # Load vLLM model for generation
         print("🔄 Loading vLLM model for generation...")
-        llm, sampling_params, processor = load_model(
-            gen_model, max_model_token_num=3072, tensor_parallel_size=4, multi_modal=multi_modal)
+        llm, sampling_params, processor = load_model(gen_model, max_model_token_num=3072, tensor_parallel_size=tensor_parallel_size, multi_modal=multi_modal)
         if "reason_answer" not in ds[0]:
             gts = [row["answer"] for row in ds]
             ds = generate_cots(llm, processor, sampling_params, ds, gts)
@@ -266,21 +266,20 @@ def main(data_type, multi_modal=False):
 
 
 if __name__ == "__main__":
-    # import multiprocessing
-    # multiprocessing.set_start_method("spawn", force=True)
-    # data_type = "AOKVQA"
-    # multi_modal = True
-    # main(data_type, multi_modal)
-    split = "train"
-    data_type = "gsm8k"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_type", type=str, default="gsm8k")
+    parser.add_argument("--tensor-parallel-size", type=int, default=4)
+    args = parser.parse_args()
     
+    multi_modal = True if args.data_type == "AOKVQA" else False
     emb_model = "Qwen/Qwen3-Embedding-4B"
-    gen_model = "Qwen/Qwen2.5-VL-7B-Instruct"
+    gen_model = "Qwen/Qwen2.5-VL-7B-Instruct" if multi_modal else "Qwen/Qwen2.5-7B-Instruct"
     
-    data_config = DATA_MAP[data_type]
-    keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
-    raw_path = f"data/{data_type}/{split}/{split}.jsonl"
-    enhanced_path = f"data/{data_type}/{split}/{split}_enhanced.jsonl"
+    data_config = DATA_MAP[args.data_type]
+    # keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
+    main(args.data_type, args.tensor_parallel_size, multi_modal, emb_model, gen_model)
+    # raw_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}.jsonl"
+    # enhanced_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}_enhanced.jsonl"
     
-    ds_enhanced = load_dataset("json", data_files=enhanced_path)["train"]
-    embed_and_save_faiss(ds_enhanced, os.path.dirname(raw_path), emb_model, gen_model, keys_to_embed)
+    # ds_enhanced = load_dataset("json", data_files=enhanced_path)["train"]
+    # embed_and_save_faiss(ds_enhanced, os.path.dirname(raw_path), emb_model, gen_model, keys_to_embed)
