@@ -1,31 +1,12 @@
 from PIL import Image
 from utils.vis_utils import parse_points, parse_bounding_boxes
-from utils.base64_utils import b64encode_image
 
-def plan_wo_tags(question, answer=None, image=None):
+def plan_wo_tags(question, answer=None):
     if answer is None:
         answer = "YOUR ANSWER"
     
-    if image is not None:
-        sys_content = [
-                {
-                    "type": "text", 
-                    "text": "Think step by step and provide the final answer in \\boxed{}."
-                },
-            ]
-        user_content = [
-            {
-                "type": "image",
-                "image": image
-            },
-            {
-                "type": "text",
-                "text": question + f" Output the final answer as \\boxed{answer}."
-            }
-        ]
-    else:
-        sys_content = "Think step by step and provide the final answer in \\boxed{}."
-        user_content = question + f" Output the final answer as \\boxed{answer}."
+    sys_content = "Think step by step and provide the final answer in \\boxed{}."
+    user_content = question + f" Output the final answer as \\boxed{answer}."
     messages = [
         {
             "role": "system",
