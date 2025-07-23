@@ -1,17 +1,25 @@
 from PIL import Image
 from utils.vis_utils import parse_points, parse_bounding_boxes
 
-def plan_wo_tags(question, answer=None):
+def plan_wo_tags(question, answer=None, image=None):
     if answer is None:
         answer = "YOUR ANSWER"
     
-    sys_content = "Think step by step and provide the final answer in \\boxed{}."
-    user_content = question + f" Output the final answer as \\boxed{answer}."
+    user_content = question + f"\nThink step by step and provide the final answer in \\boxed{{}} as \\boxed{{{answer}}}."
+    if image is not None:
+
+        user_content = [
+            {
+                "type": "image",
+                "image": image
+            },
+            {
+                "type": "text",
+                "text": user_content
+            }
+        ]
+        
     messages = [
-        {
-            "role": "system",
-            "content": sys_content
-        },
         {
             "role": "user",
             "content": user_content
@@ -29,43 +37,6 @@ class MyCoT():
             <focus> ... </focus> OR Not Used
             <spatial> ... </spatial> OR Not Used
             """
-            
-    def plan_wo_tags(self, question, answer=None, image=None, **kwargs):
-        if answer is None:
-            answer = "YOUR ANSWER"
-        
-        if image is not None:
-            sys_content = [
-                    {
-                        "type": "text", 
-                        "text": "Think step by step and provide the final answer in \\boxed{}."
-                    },
-                ]
-            user_content = [
-                {
-                    "type": "image",
-                    "image": image
-                },
-                {
-                    "type": "text",
-                    "text": question + f" Output the final answer as \\boxed{answer}."
-                }
-            ]
-        else:
-            sys_content = "Think step by step and provide the final answer in \\boxed{}."
-            user_content = question + f" Output the final answer as \\boxed{answer}."
-        messages = [
-            {
-                "role": "system",
-                "content": sys_content
-            },
-            {
-                "role": "user",
-                "content": user_content
-            }
-        ]
-        return messages
-                
            
     def plan_with_tags(self, content, answer=None, multi_modal=True):
         if answer is None:

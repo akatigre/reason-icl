@@ -33,8 +33,6 @@ if __name__ == '__main__':
     for task_name in task_names:
         logger.info(f"Running {task_name} with retrieve model {args.retrieve_model_path} and inference model {args.model_path}")
         config = DATA_MAP[task_name]
-        
-        
         dataset = load_dataset(config["data_path"], config["subset_name"])
         dataset[config["train_split"]] = dataset[config["train_split"]].map(config["data_processor"])
         dataset[config["test_split"]] = dataset[config["test_split"]].map(config["data_processor"])

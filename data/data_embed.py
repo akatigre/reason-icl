@@ -1,26 +1,27 @@
 import os
+import gc
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import torch
 import random
 import argparse
+from PIL import Image
 from tqdm import tqdm
+from pathlib import Path
 from vllm import LLM, SamplingParams
+from transformers import AutoProcessor
 from datasets import load_dataset, load_from_disk, Array2D
 from data_template import DATA_MAP
 from data.perturb_reasoning import generate_negatives_variations, generate_positives_variations
 from data.generate_cot import plan_wo_tags
 from utils.parse_utils import extract_last_boxed_text
-import gc
-from PIL import Image
 
 
 
 
 def load_model(model_path, max_model_token_num, tensor_parallel_size=4, multi_modal=False):
-    from vllm import LLM, SamplingParams
-    from transformers import AutoProcessor
+    
     llm = LLM(model=model_path, tensor_parallel_size=tensor_parallel_size)
 
     if multi_modal:
@@ -55,8 +56,8 @@ def prepare_aokvqa():
     import os
     import json
     from utils.aokvqa_utils import get_coco_path
-    aokvqa_dir = "/home/server08/hdd1/yoonjeon_workspace/aokvqa/"
-    coco_dir = "/home/server08/hdd1/yoonjeon_workspace/coco/"
+    aokvqa_dir = "./data/aokvqa/"
+    coco_dir = "./data/coco/"
     split = "train"
     dataset = json.load(open(
             os.path.join(aokvqa_dir, f"aokvqa_v1p0_{split}.json")
@@ -67,74 +68,89 @@ def prepare_aokvqa():
         choices = ", ".join(data_item["choices"])
         data_list.append({
             "image_path": get_coco_path(split, data_item["image_id"], coco_dir),
-            "question": f"{data_item['question']}. Answer from one of the choices {choices}. When the provided information is insufficient, respond with 'Unanswerable'.\nAnswer the question using a single word or phrase.",
+            "question": f"{data_item['question']}. Answer from one of the choices {choices}.",
             "answer": data_item["choices"][data_item["correct_choice_idx"]],
         })
 
-    with open(f"AOKVQA/{split}/{split}.jsonl", "w") as f:
+    with open(f"./data/AOKVQA/{split}/{split}.jsonl", "w") as f:
         for data_item in data_list:
             f.write(json.dumps(data_item, ensure_ascii=False) + "\n")
 
 def generate_cots(llm, processor, sampling_params, ds, gts):
-    prompts = []
-    ds = ds.select(range(10))
-    for row in tqdm(ds, desc="Generating COTs without answer"):
-        message = plan_wo_tags(question=row["question"], answer=None)
-        prompt = processor.apply_chat_template(message, tokenize=False)
-
-        image = row.get("image_path", None)
-        if image:
-            pil_image = Image.open(image)
-            prompts.append({
-                "prompt": prompt,
-                "multi_modal_data": {"image": pil_image},
-            })
+    batch_size = 128
+    n_shards = len(ds) // batch_size + 1
+    for i in tqdm(range(0, n_shards), desc="Generating COTs without answer"):
+        batch = ds.shard(num_shards=n_shards, index=i)
+        batch_prompts = []
+        for row in batch:
+            message = plan_wo_tags(question=row["question"], answer=None, image=row.get("image_path", None))
+            prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+            
+            image = row.get("image_path", None)
+            if image:
+                pil_image = Image.open(image.replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
+                batch_prompts.append({
+                    "prompt": prompt,
+                    "multi_modal_data": {"image": pil_image},
+                })
+            else:
+                batch_prompts.append(prompt)
+        batch_outputs = llm.generate(batch_prompts, sampling_params)
+        if i == 0:
+            outputs = batch_outputs
         else:
-            prompts.append(prompt)
-        
-    
-    outputs = llm.generate(prompts, sampling_params)
-    responses = [output.outputs[0].text.strip() + " The answer" for output in outputs]
+            outputs += batch_outputs
+    responses = [output.outputs[0].text.strip() + " The answer is \\boxed{" + gts[idx] + "}" for idx, output in enumerate(outputs)]
     extracted = [extract_last_boxed_text(response) for response in responses]
     correct_idxs = [i for i, answer in enumerate(extracted) if answer == gts[i]]
+    if "reason" in ds[0]:
+        ds = ds.remove_columns("reason")
     ds = ds.add_column("reason", responses)
     
-    prompts = []
-    for idx, row in tqdm(enumerate(ds), desc="Generating COTs with answer"):
-        if idx in correct_idxs:
-            continue
-        else:
-            for row in tqdm(ds, desc="Generating COTs without answer"):
-                message = plan_wo_tags(question=row["question"], answer=None)
-                prompt = processor.apply_chat_template(message, tokenize=False)
+    second_pass_idxs = [
+        i for i in range(len(ds)) if i not in correct_idxs
+    ]
 
-                image = row.get("image_path", None)
-                if image:
-                    pil_image = Image.open(image)
-                    prompts.append({
-                        "prompt": prompt,
-                        "multi_modal_data": {"image": pil_image},
-                    })
-                else:
-                    prompts.append(prompt)
+    n_shards = len(second_pass_idxs) // batch_size + 1
+    ds_subset = ds.select(second_pass_idxs)
+    outputs = []
+    for i in tqdm(range(0, n_shards), desc="Second pass (with answers)"):
+        ds_batch = ds_subset.shard(num_shards=n_shards, index=i)
+        batch_prompts = []
         
-    outputs = llm.generate(prompts, sampling_params, use_tqdm=True)
-    responses = [output.outputs[0].text.strip() for output in outputs]
-    for idx, (row, response) in enumerate(zip(ds, responses)):
-        if idx in correct_idxs:
-            continue
-        else:
-            row["reason"] = response
+        for row in ds_batch:
+            message = plan_wo_tags(
+                question=row["question"],
+                answer=gts[i],
+                image=row.get("image_path", None),
+            )
+            prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+
+            if row.get("image_path"):
+                pil_image = Image.open(row["image_path"].replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
+                batch_prompts.append({
+                    "prompt": prompt,
+                    "multi_modal_data": {"image": pil_image},
+                })
+            else:
+                batch_prompts.append(prompt)
+
+        # Generate for this batch
+        batch_outputs = llm.generate(batch_prompts, sampling_params, use_tqdm=False)
+        outputs += [output.outputs[0].text.strip() for output in batch_outputs]
+    
+    for idx, pass_idx in enumerate(second_pass_idxs):
+        ds[pass_idx]["reason"] = outputs[idx] + f" The answer is \\boxed{{{gts[pass_idx]}}}"
     return ds
 
 def generate_variations(llm, processor, sampling_params, ds, output_path):
     idxs = list(range(len(ds)))
     for row in tqdm(ds, desc="Generating variations"):
         try:
-            negatives = generate_negatives_variations(llm, processor, sampling_params, row["reason_answer"], num_variants=30)
+            negatives = generate_negatives_variations(llm, processor, sampling_params, row["reason"], num_variants=30)
             random_idxs = random.sample(idxs, 30)
-            ds_random = [ds[i]["reason_answer"] for i in random_idxs]
-            positives = generate_positives_variations(llm, processor, sampling_params, row["reason_answer"], ds_random)
+            ds_random = [ds[i]["reason"] for i in random_idxs]
+            positives = generate_positives_variations(llm, processor, sampling_params, row["reason"], ds_random)
 
             row["negatives"] = negatives
             row["positives"] = positives
@@ -205,34 +221,30 @@ def load_data_and_embeddings(ds, save_to_path, emb_model, keys_to_embed):
 
 
 def main(data_type, multi_modal=False, tensor_parallel_size=4, emb_model=None, gen_model=None):
-    from pathlib import Path
     data_config = DATA_MAP[data_type]
 
     keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
     splits = [data_config["train_split"], data_config["test_split"]]
-
+    
+    print("🔄 Loading vLLM model for generation...")
+    llm, sampling_params, processor = load_model(gen_model, max_model_token_num=3072, tensor_parallel_size=tensor_parallel_size, multi_modal=multi_modal)    
+        
     for split in splits:
         print(f"\n▶ Processing split: {split}")
         enhanced_path = f"data/{data_type}/{split}/{split}_enhanced.jsonl"
-        if os.path.exists(enhanced_path):
-            ds = load_dataset('json', data_files=enhanced_path)['train']
-        else:
-            ds = load_dataset('json', data_files=str(Path(data_config["data_path"]) / split / f"{split}.jsonl"))['train']
-        
+        ds = load_dataset('json', data_files=str(Path(data_config["data_path"]) / split / f"{split}.jsonl"))['train']
         # Load vLLM model for generation
-        print("🔄 Loading vLLM model for generation...")
-        llm, sampling_params, processor = load_model(gen_model, max_model_token_num=3072, tensor_parallel_size=tensor_parallel_size, multi_modal=multi_modal)
-        if "reason_answer" not in ds[0]:
-            gts = [row["answer"] for row in ds]
-            ds = generate_cots(llm, processor, sampling_params, ds, gts)
-            with open(enhanced_path, "w") as f:
-                for row in ds:
-                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        if "negatives" not in ds[0]:
-            ds = generate_variations(llm, processor, sampling_params, ds, enhanced_path)
-            with open(enhanced_path, "w") as f:
-                for row in ds:
-                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        
+        gts = [row["answer"] for row in ds]
+        ds = generate_cots(llm, processor, sampling_params, ds, gts)
+        with open(enhanced_path, "w") as f:
+            for row in ds:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        
+        ds = generate_variations(llm, processor, sampling_params, ds, enhanced_path)
+        with open(enhanced_path, "w") as f:
+            for row in ds:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     print("🔄 Shutting down vLLM engine and freeing CUDA memory...")
     # 1) Explicitly shut down the engine (kills worker procs & ZMQ contexts)
@@ -266,10 +278,18 @@ def main(data_type, multi_modal=False, tensor_parallel_size=4, emb_model=None, g
 
 
 if __name__ == "__main__":
+    # mp.set_start_method("spawn", force=True)
+    # gen_model = "Qwen/Qwen2.5-VL-7B-Instruct"
+    # tensor_parallel_size = 4
+    # llm = LLM(
+    #         model=gen_model,
+    #         tensor_parallel_size=tensor_parallel_size
+    #     )
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_type", type=str, default="gsm8k")
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
     args = parser.parse_args()
+    
     
     multi_modal = True if args.data_type == "AOKVQA" else False
     emb_model = "Qwen/Qwen3-Embedding-4B"
@@ -278,8 +298,8 @@ if __name__ == "__main__":
     data_config = DATA_MAP[args.data_type]
     # keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
     main(args.data_type, tensor_parallel_size=args.tensor_parallel_size, multi_modal=multi_modal, emb_model=emb_model, gen_model=gen_model)
-    # raw_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}.jsonl"
-    # enhanced_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}_enhanced.jsonl"
+    raw_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}.jsonl"
+    enhanced_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}_enhanced.jsonl"
     
     # ds_enhanced = load_dataset("json", data_files=enhanced_path)["train"]
     # embed_and_save_faiss(ds_enhanced, os.path.dirname(raw_path), emb_model, gen_model, keys_to_embed)
