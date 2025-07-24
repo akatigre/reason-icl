@@ -108,3 +108,5 @@ if __name__ == '__main__':
         with open(output_json_filepath, "w") as f:
             for result in results:
                 f.write(json.dumps(result) + "\n")
+                
+                

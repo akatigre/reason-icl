@@ -76,89 +76,86 @@ def prepare_aokvqa():
         for data_item in data_list:
             f.write(json.dumps(data_item, ensure_ascii=False) + "\n")
 
-def generate_cots(llm, processor, sampling_params, ds, gts):
+def generate_cots(llm, processor, sampling_params, ds, output_path):
     batch_size = 128
     n_shards = len(ds) // batch_size + 1
-    for i in tqdm(range(0, n_shards), desc="Generating COTs without answer"):
-        batch = ds.shard(num_shards=n_shards, index=i)
-        batch_prompts = []
-        for row in batch:
-            message = plan_wo_tags(question=row["question"], answer=None, image=row.get("image_path", None))
-            prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+    with open(output_path, "w") as f:
+        tqdm_bar = tqdm(range(0, n_shards))
+        for i in tqdm_bar:
+            batch = ds.shard(num_shards=n_shards, index=i)
+            gts = [row["answer"] for row in batch]
+            batch_prompts = []
+            for row in batch:
+                message = plan_wo_tags(question=row["question"], answer=None, image=row.get("image_path", None))
+                prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+                
+                image = row.get("image_path", None)
+                if image:
+                    pil_image = Image.open(image.replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
+                    batch_prompts.append({
+                        "prompt": prompt,
+                        "multi_modal_data": {"image": pil_image},
+                    })
+                else:
+                    batch_prompts.append(prompt)
             
-            image = row.get("image_path", None)
-            if image:
-                pil_image = Image.open(image.replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
-                batch_prompts.append({
-                    "prompt": prompt,
-                    "multi_modal_data": {"image": pil_image},
-                })
-            else:
-                batch_prompts.append(prompt)
-        batch_outputs = llm.generate(batch_prompts, sampling_params)
-        if i == 0:
-            outputs = batch_outputs
-        else:
-            outputs += batch_outputs
-    responses = [output.outputs[0].text.strip() + " The answer is \\boxed{" + gts[idx] + "}" for idx, output in enumerate(outputs)]
-    extracted = [extract_last_boxed_text(response) for response in responses]
-    correct_idxs = [i for i, answer in enumerate(extracted) if answer == gts[i]]
-    if "reason" in ds[0]:
-        ds = ds.remove_columns("reason")
-    ds = ds.add_column("reason", responses)
-    
-    second_pass_idxs = [
-        i for i in range(len(ds)) if i not in correct_idxs
-    ]
+            batch_outputs = llm.generate(batch_prompts, sampling_params, use_tqdm=True)
+            for idx, (input_row, output, gt) in enumerate(zip(batch, batch_outputs, gts)):
+                model_output = output.outputs[0].text.strip()
+                input_row["reason"] = model_output + " The answer is \\boxed{" + gt + "}"
+                pred = extract_last_boxed_text(model_output)
+                input_row["pred"] = pred
+                input_row["correct"] = (pred == gt)
+                f.write(json.dumps(input_row, ensure_ascii=False) + "\n")
 
-    n_shards = len(second_pass_idxs) // batch_size + 1
-    ds_subset = ds.select(second_pass_idxs)
-    outputs = []
-    for i in tqdm(range(0, n_shards), desc="Second pass (with answers)"):
-        ds_batch = ds_subset.shard(num_shards=n_shards, index=i)
-        batch_prompts = []
+    # for i in tqdm(range(0, n_shards), desc="Second pass (with answers)"):
+    #     ds_batch = ds_subset.shard(num_shards=n_shards, index=i)
+    #     batch_prompts = []
         
-        for row in ds_batch:
-            message = plan_wo_tags(
-                question=row["question"],
-                answer=gts[i],
-                image=row.get("image_path", None),
-            )
-            prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+    #     for row in ds_batch:
+    #         message = plan_wo_tags(
+    #             question=row["question"],
+    #             answer=gts[i],
+    #             image=row.get("image_path", None),
+    #         )
+    #         prompt = processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
 
-            if row.get("image_path"):
-                pil_image = Image.open(row["image_path"].replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
-                batch_prompts.append({
-                    "prompt": prompt,
-                    "multi_modal_data": {"image": pil_image},
-                })
-            else:
-                batch_prompts.append(prompt)
+    #         if row.get("image_path"):
+    #             pil_image = Image.open(row["image_path"].replace("/home/server08/hdd1/yoonjeon_workspace", "./data"))
+    #             batch_prompts.append({
+    #                 "prompt": prompt,
+    #                 "multi_modal_data": {"image": pil_image},
+    #             })
+    #         else:
+    #             batch_prompts.append(prompt)
 
-        # Generate for this batch
-        batch_outputs = llm.generate(batch_prompts, sampling_params, use_tqdm=False)
-        outputs += [output.outputs[0].text.strip() for output in batch_outputs]
+    #     # Generate for this batch
+    #     batch_outputs = llm.generate(batch_prompts, sampling_params, use_tqdm=False)
+    #     outputs += [output.outputs[0].text.strip() for output in batch_outputs]
     
-    for idx, pass_idx in enumerate(second_pass_idxs):
-        ds[pass_idx]["reason"] = outputs[idx] + f" The answer is \\boxed{{{gts[pass_idx]}}}"
-    return ds
+    # for idx, pass_idx in enumerate(second_pass_idxs):
+    #     ds[pass_idx]["reason"] = outputs[idx] + f" The answer is \\boxed{{{gts[pass_idx]}}}"
+    # return ds
 
 def generate_variations(llm, processor, sampling_params, ds, output_path):
     idxs = list(range(len(ds)))
-    for row in tqdm(ds, desc="Generating variations"):
-        try:
-            negatives = generate_negatives_variations(llm, processor, sampling_params, row["reason"], num_variants=30)
-            random_idxs = random.sample(idxs, 30)
-            ds_random = [ds[i]["reason"] for i in random_idxs]
-            positives = generate_positives_variations(llm, processor, sampling_params, row["reason"], ds_random)
 
-            row["negatives"] = negatives
-            row["positives"] = positives
-        except Exception as e:
-            print(f"Error processing row: {e}")
-            row["negatives"] = []
-            row["positives"] = []
-    return ds
+    with open(output_path, "w") as f:
+        for row in tqdm(ds, desc="Generating variations"):
+            try:
+                negatives = generate_negatives_variations(llm, processor, sampling_params, row["reason"], num_variants=30)
+                random_idxs = random.sample(idxs, 30)
+                ds_random = [ds[i]["reason"] for i in random_idxs]
+                positives = generate_positives_variations(llm, processor, sampling_params, row["reason"], ds_random)
+
+                row["negatives"] = negatives
+                row["positives"] = positives
+            except Exception as e:
+                print(f"Error processing row: {e}")
+                row["negatives"] = []
+                row["positives"] = []
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
 
 def embed_and_save_faiss(ds, save_to_path, emb_model, gen_model, keys_to_embed):
     from sentence_transformers import SentenceTransformer
@@ -224,28 +221,30 @@ def main(data_type, multi_modal=False, tensor_parallel_size=4, emb_model=None, g
     data_config = DATA_MAP[data_type]
 
     keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
-    splits = [data_config["train_split"], data_config["test_split"]]
+    # splits = [data_config["train_split"], data_config["test_split"]]
+    splits = [data_config["train_split"]]
     
     print("🔄 Loading vLLM model for generation...")
     llm, sampling_params, processor = load_model(gen_model, max_model_token_num=3072, tensor_parallel_size=tensor_parallel_size, multi_modal=multi_modal)    
         
     for split in splits:
         print(f"\n▶ Processing split: {split}")
-        enhanced_path = f"data/{data_type}/{split}/{split}_enhanced.jsonl"
+        
         ds = load_dataset('json', data_files=str(Path(data_config["data_path"]) / split / f"{split}.jsonl"))['train']
         # Load vLLM model for generation
+        cot_path = f"data/{data_type}/{split}/{split}_cot.jsonl"
+        if not os.path.exists(cot_path):
+            generate_cots(llm, processor, sampling_params, ds, cot_path)
+        else:
+            print(f"✅ {cot_path} already exists")
+        ds = load_dataset('json', data_files=cot_path)['train']
+        variation_path = f"data/{data_type}/{split}/{split}_variation.jsonl"
+        if not os.path.exists(variation_path):
+            generate_variations(llm, processor, sampling_params, ds, variation_path)
+        else:
+            print(f"✅ {variation_path} already exists")
+        ds = load_dataset('json', data_files=variation_path)['train']
         
-        gts = [row["answer"] for row in ds]
-        ds = generate_cots(llm, processor, sampling_params, ds, gts)
-        with open(enhanced_path, "w") as f:
-            for row in ds:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        
-        ds = generate_variations(llm, processor, sampling_params, ds, enhanced_path)
-        with open(enhanced_path, "w") as f:
-            for row in ds:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
     print("🔄 Shutting down vLLM engine and freeing CUDA memory...")
     # 1) Explicitly shut down the engine (kills worker procs & ZMQ contexts)
     try:
@@ -278,28 +277,14 @@ def main(data_type, multi_modal=False, tensor_parallel_size=4, emb_model=None, g
 
 
 if __name__ == "__main__":
-    # mp.set_start_method("spawn", force=True)
-    # gen_model = "Qwen/Qwen2.5-VL-7B-Instruct"
-    # tensor_parallel_size = 4
-    # llm = LLM(
-    #         model=gen_model,
-    #         tensor_parallel_size=tensor_parallel_size
-    #     )
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_type", type=str, default="gsm8k")
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
     args = parser.parse_args()
-    
     
     multi_modal = True if args.data_type == "AOKVQA" else False
     emb_model = "Qwen/Qwen3-Embedding-4B"
     gen_model = "Qwen/Qwen2.5-VL-7B-Instruct" if multi_modal else "Qwen/Qwen2.5-7B-Instruct"
     
     data_config = DATA_MAP[args.data_type]
-    # keys_to_embed = data_config["input_columns"] + [data_config["output_column"]]
     main(args.data_type, tensor_parallel_size=args.tensor_parallel_size, multi_modal=multi_modal, emb_model=emb_model, gen_model=gen_model)
-    raw_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}.jsonl"
-    enhanced_path = f"data/{args.data_type}/{data_config['train_split']}/{data_config['train_split']}_enhanced.jsonl"
-    
-    # ds_enhanced = load_dataset("json", data_files=enhanced_path)["train"]
-    # embed_and_save_faiss(ds_enhanced, os.path.dirname(raw_path), emb_model, gen_model, keys_to_embed)
